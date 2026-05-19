@@ -5,3 +5,4 @@ dist
 .DS_Store
 .vercel
 .workboard-access-key
+.convex-deploy-key.env
