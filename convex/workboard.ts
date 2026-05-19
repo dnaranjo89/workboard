@@ -1,4 +1,4 @@
-import { env, mutation, query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const DEFAULT_DEVBOXES = [
@@ -15,7 +15,7 @@ const taskStatus = v.union(
 );
 
 function requireAccess(accessKey: string) {
-  const configuredKey = env.WORKBOARD_ACCESS_KEY;
+  const configuredKey = process.env.WORKBOARD_ACCESS_KEY;
 
   if (!configuredKey) {
     throw new Error("WORKBOARD_ACCESS_KEY is not configured in Convex.");

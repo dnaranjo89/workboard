@@ -27,6 +27,9 @@ Vercel deployment.
    npx convex env set WORKBOARD_ACCESS_KEY
    ```
 
+   This checkout has an ignored `.workboard-access-key` file if you need the
+   generated key that was configured during setup.
+
 4. Run the frontend:
 
    ```bash
