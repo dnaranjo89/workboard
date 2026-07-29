@@ -46,6 +46,13 @@ const palette = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899"];
 const taskDragType = "application/x-workboard-task";
 const fallbackTaskDragType = "text/plain";
 
+// Base URL of the per-session status widget served from the devbox (behind the
+// owner-only dev tunnel). Override in Vercel via VITE_SESSION_STATUS_URL.
+const STATUS_BASE = (
+  (import.meta.env.VITE_SESSION_STATUS_URL as string | undefined) ??
+  "https://cc7mdm8w-3000.euw.devtunnels.ms"
+).replace(/\/+$/, "");
+
 function App() {
   const [accessKey, setAccessKey] = useStoredAccessKey();
   const [pendingKey, setPendingKey] = useState("");
@@ -344,6 +351,7 @@ function TaskSlot({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [links, setLinks] = useState(task.links ?? "");
   const [status, setStatus] = useState<TaskStatus>(task.status);
+  const [sessionId, setSessionId] = useStoredSessionId(task.devboxId, task.slot);
   const [dirty, setDirty] = useState(false);
   const lastSaved = useRef(
     serializeTask(task.title, task.branch, task.notes, task.links, task.status),
@@ -457,6 +465,22 @@ function TaskSlot({
         }}
         placeholder="Branch, PR, ticket"
       />
+
+      <input
+        value={sessionId}
+        onChange={(event) => setSessionId(event.target.value.trim())}
+        placeholder="Copilot session id (live status)"
+        spellCheck={false}
+      />
+
+      {sessionId ? (
+        <iframe
+          className="session-status-frame"
+          src={`${STATUS_BASE}/s/${encodeURIComponent(sessionId)}`}
+          title={`Session ${sessionId} status`}
+          loading="lazy"
+        />
+      ) : null}
 
       <textarea
         value={notes}
@@ -743,6 +767,33 @@ function useStoredAccessKey() {
   }
 
   return [accessKey, setAccessKey] as const;
+}
+
+function useStoredSessionId(
+  devboxId: Id<"devboxes"> | undefined,
+  slot: number,
+) {
+  const storageKey = `workboard.sessionId.${devboxId ?? "unassigned"}.${slot}`;
+  const [sessionId, setSessionIdState] = useState(() => {
+    return window.localStorage.getItem(storageKey) ?? "";
+  });
+  const [activeKey, setActiveKey] = useState(storageKey);
+
+  if (activeKey !== storageKey) {
+    setActiveKey(storageKey);
+    setSessionIdState(window.localStorage.getItem(storageKey) ?? "");
+  }
+
+  function setSessionId(value: string) {
+    setSessionIdState(value);
+    if (value) {
+      window.localStorage.setItem(storageKey, value);
+    } else {
+      window.localStorage.removeItem(storageKey);
+    }
+  }
+
+  return [sessionId, setSessionId] as const;
 }
 
 export default App;
