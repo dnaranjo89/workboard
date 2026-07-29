@@ -4,12 +4,13 @@ import { v } from "convex/values";
 export default defineSchema({
   devboxes: defineTable({
     name: v.string(),
-    color: v.string(),
+    color: v.optional(v.string()),
+    connectionUrl: v.optional(v.string()),
     location: v.optional(v.string()),
     updatedAt: v.number(),
   }),
   tasks: defineTable({
-    devboxId: v.id("devboxes"),
+    devboxId: v.optional(v.id("devboxes")),
     slot: v.number(),
     title: v.string(),
     status: v.union(
@@ -19,6 +20,7 @@ export default defineSchema({
       v.literal("done"),
     ),
     notes: v.optional(v.string()),
+    links: v.optional(v.string()),
     branch: v.optional(v.string()),
     updatedAt: v.number(),
   })

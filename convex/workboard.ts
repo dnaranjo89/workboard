@@ -2,9 +2,9 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const DEFAULT_DEVBOXES = [
-  { name: "Devbox 1", color: "#2563eb", location: "" },
-  { name: "Devbox 2", color: "#16a34a", location: "" },
-  { name: "Devbox 3", color: "#d97706", location: "" },
+  { name: "Devbox 1", connectionUrl: "" },
+  { name: "Devbox 2", connectionUrl: "" },
+  { name: "Devbox 3", connectionUrl: "" },
 ];
 
 const taskStatus = v.union(
@@ -34,14 +34,17 @@ export const list = query({
     const devboxes = await ctx.db.query("devboxes").collect();
     const tasks = await ctx.db.query("tasks").collect();
 
-    return devboxes
-      .sort((a, b) => a._creationTime - b._creationTime)
-      .map((devbox) => ({
-        ...devbox,
-        tasks: tasks
-          .filter((task) => task.devboxId === devbox._id)
-          .sort((a, b) => a.slot - b.slot),
-      }));
+    return {
+      devboxes: devboxes
+        .sort((a, b) => a._creationTime - b._creationTime)
+        .map((devbox) => ({
+          ...devbox,
+          tasks: sortTasks(
+            tasks.filter((task) => task.devboxId === devbox._id),
+          ),
+        })),
+      unassignedTasks: sortTasks(tasks.filter((task) => !task.devboxId)),
+    };
   },
 });
 
@@ -67,68 +70,101 @@ export const updateDevbox = mutation({
     accessKey: v.string(),
     devboxId: v.id("devboxes"),
     name: v.string(),
-    location: v.optional(v.string()),
-    color: v.string(),
+    connectionUrl: v.optional(v.string()),
   },
-  handler: async (ctx, { accessKey, devboxId, name, location, color }) => {
+  handler: async (ctx, { accessKey, devboxId, name, connectionUrl }) => {
     requireAccess(accessKey);
 
     await ctx.db.patch(devboxId, {
       name: name.trim() || "Untitled devbox",
-      location: location?.trim(),
-      color,
+      connectionUrl: connectionUrl?.trim(),
       updatedAt: Date.now(),
     });
   },
 });
 
-export const upsertTask = mutation({
+export const addTask = mutation({
   args: {
     accessKey: v.string(),
-    devboxId: v.id("devboxes"),
-    slot: v.number(),
+    devboxId: v.optional(v.id("devboxes")),
+  },
+  handler: async (ctx, { accessKey, devboxId }) => {
+    requireAccess(accessKey);
+
+    const tasks = await ctx.db.query("tasks").collect();
+    const slot = nextSlot(tasks.filter((task) => task.devboxId === devboxId));
+    const now = Date.now();
+
+    return await ctx.db.insert("tasks", {
+      ...(devboxId ? { devboxId } : {}),
+      slot,
+      title: "",
+      status: "active",
+      notes: "",
+      branch: "",
+      updatedAt: now,
+    });
+  },
+});
+
+export const moveTask = mutation({
+  args: {
+    accessKey: v.string(),
+    taskId: v.id("tasks"),
+    devboxId: v.optional(v.id("devboxes")),
+  },
+  handler: async (ctx, { accessKey, taskId, devboxId }) => {
+    requireAccess(accessKey);
+
+    const tasks = await ctx.db.query("tasks").collect();
+    await ctx.db.patch(taskId, {
+      devboxId,
+      slot: nextSlot(
+        tasks.filter(
+          (task) => task._id !== taskId && task.devboxId === devboxId,
+        ),
+      ),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const updateTask = mutation({
+  args: {
+    accessKey: v.string(),
+    taskId: v.id("tasks"),
     title: v.string(),
     status: taskStatus,
     notes: v.optional(v.string()),
+    links: v.optional(v.string()),
     branch: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { accessKey, devboxId, slot, title, status, notes, branch },
+    { accessKey, taskId, title, status, notes, links, branch },
   ) => {
     requireAccess(accessKey);
 
-    if (slot < 0 || slot > 1) {
-      throw new Error("Each devbox supports two tracked task slots.");
-    }
-
-    const existing = await ctx.db
-      .query("tasks")
-      .withIndex("by_devbox_slot", (q) =>
-        q.eq("devboxId", devboxId).eq("slot", slot),
-      )
-      .unique();
-
-    const update = {
+    await ctx.db.patch(taskId, {
       title: title.trim(),
       status,
       notes: notes?.trim(),
+      links: links?.trim(),
       branch: branch?.trim(),
       updatedAt: Date.now(),
-    };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, update);
-      return existing._id;
-    }
-
-    return await ctx.db.insert("tasks", {
-      devboxId,
-      slot,
-      ...update,
     });
   },
 });
+
+function sortTasks<T extends { slot: number; _creationTime: number }>(
+  tasks: T[],
+) {
+  return tasks.sort((a, b) => a.slot - b.slot || a._creationTime - b._creationTime);
+}
+
+function nextSlot(tasks: Array<{ slot: number }>) {
+  return tasks.reduce((max, task) => Math.max(max, task.slot), -1) + 1;
+}
 
 export const clearTask = mutation({
   args: {
